@@ -1,0 +1,109 @@
+\chapter{METODOLOGI}
+
+% Ubah konten-konten berikut sesuai dengan isi dari metodologi
+Pada bab ini akan dijelaskan langkah-langkah dalam mengerjakan penelitian ini. Metodologi penelitian digunakan sebagai acuan penelitian agar dapat berjalan secara sistematik. Langkah-langkah yang akan dilaksanakan pada penelitian ini ditunjukkan pada blok diagram.
+
+\begin{figure}[ht]
+	\centering
+	\includegraphics[scale=0.85]{./gambar/diagramrev.pdf}
+	\caption{Blok Diagram Penelitian}
+	\label{fig:diagrammetodologi}
+\end{figure}
+
+\section{Pengumpulan Data}
+Data yang digunakan pada penelitian untuk model deteksi objek merupakan kumpulan data berupa gambar. Dataset yang digunakan diambil dari dataset publik seperti COCO \autocite{DBLP:journals/corr/LinMBHPRDZ14} yang terdiri dari 47.202 gambar, OpenImage \autocite{DBLP:journals/corr/abs-1811-00982} yang terdiri dari 147.699 gambar, dan video CCTV di kota Surabaya dengan resolusi SD(640x480) dan HD (1280x720), dimana pada video tersebut akan dilakukan ekstraksi setiap 10 framenya.
+
+\section{Analisis dan Perancangan Sistem}
+Pada tahapan ini, dilakukan percangan sistem dimulai dari penggunaan bahasa pemrograman hingga tahap perhitungan jumlah kendaraan yang melintas. Sistem ini menggunakan bahasa pemrograman Python dan \emph{library} PyTorch.
+\begin{enumerate}
+\item \emph{Pre-processing Data}
+
+Gambar yang diperoleh dari video CCTV akan dilakukan \emph{image cropping} yang bertujuan agar memfokuskan gambar pada objek kendaraan saja. Langkah selanjutnya dilakukan tahapan pemberian label. Label akan dibagi kedalam 5 kategori kendaraan, yaitu Sepeda, Motor, Mobil, Bus dan truk. Langkah terakhir dalam \emph{pre-processing data} adalah pembagian data latih dan data uji. Data set dibagi menjadi 2 bagian dengan komposisi 80\% dari seluruh gambar untuk melatih model, dan sisa 20\% untuk melakukan uji coba terhadap hasil dari model.
+
+\item Pelatihan Model Deteksi Objek
+
+Hasil data latih dari tahapan \emph{pre-processing data} akan digunakan sebagai input dalam melatih model pendeteksi objek berbasis YOLOv7. Dalam pelatihan ini nantinya bobot awal yang digunakan akan menggunakan data \emph{pre-trained weight} yang telah dilatih sebelumnya pada jaringan YOLO untuk suatu dataset dalam hal ini akan digunakan \emph{pre-trained model} Common Objects in Context (COCO). \emph{Pre-trained weight} menjadikan proses dari training \emph{model weight} memakan waktu yang lebih singkat. Hasil dari proses ini adalah sebuah bobot baru dari hasil data training sebelumnya atau disebut \emph{Trained weight}. \emph{Trained weight} inilah nantinya yang akan digunakan dalam pendeteksian objek kendaraan.
+
+\item Pelacakan Objek Kendaraan
+
+Pada tahap ini akan mengiplementasikan metode MOT dengan algoritma StrongSORT. Hasil dari pelatihan model deteksi objek pada YOLOv7 kemudian akan digunakan untuk mendeteksi objek kendaraan dan mengklasifikasi jenisnya. Secara berurutan, setiap \emph{frame} dari video akan masuk ke dalam jaringan YOLOv7 untuk dilakukan pendeteksian objek, kemudian didapatkan keluaran berupa himpunan koordinat (\emph{bbox}), kelas objek (\emph{cls}) dan nilai keyakinan dari setiap objek yang muncul pada \emph{frame} (\emph{conf}), nilai-nilai ini kemudian akan diproses dengan algoritma StrongSORT. Kemudian StrongSORT akan memberikan id terhadap objek kendaraan yang terdeteksi oleh YOLOv7 dan terus melacaknya selama objek tersebut masih berada dalam \emph{frame} video. StrongSORT melacak objek dengan memprediksi benda menggunakan NSA Kalman dan mencocokan kemiripan objek berdasarkan \emph{appearance feature extractor} dari model BoT + ResNest yang sudah dilatih sebelumnya.
+
+\item Implementasi StrongSORT
+ \begin{enumerate}
+\item{ResNeSt50}\\
+ResNeSt50 akan digunakan sebagai backbone pada \emph{appearance feature extractor} yang dilatih dengan dataset VeRi. Dimana ResNest50 akan dapat melakukan \emph{appearance feature extractor} untuk mencocokan objek atau melakukan reidentifikasi. 
+
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.5\textwidth]{./gambar/resnest-arsitektur.png}
+  \caption{Arsitektur RestNeSt50}
+  \label{fig:IoUequation}
+\end{figure}
+
+\item{Exponential Moving Average}\\
+Dalam \emph{feature updating} akan dilakukan mengikuti EMA dimana akan memperbaharui \emph{appearance state} $a_i^t$ untuk $i-th$ \emph{tracklet} pada frame $t$.
+\begin{equation}
+e_i^t={\alpha e_i^{t-1} +  \left(1-\alpha\right) f_i^t}
+\end{equation}
+Dimana:\\
+\hspace*{3em}
+\begin{tabular}{rl}
+    $e_i^t$:& pembaharuan \emph{appearance embedding} untuk $i-th$ \emph{tracklet} pada frame $t$ \\
+    $ \alpha$:& \emph{momentum term} dimana $ \alpha = 0.9$  \\
+    $  f_i^t$:&\emph{appearance embedding} dari deteksi yang cocok saat ini. \\
+\end{tabular}
+\\
+
+\item{Enhanced Correlation Coefficient (ECC)}
+
+ECC digunakan sebagai \emph{camera motion compensation} untuk menstabilkan gambar akibat dari pergerakan kamera.
+
+\item{\emph{Noise Scale Adaptive} (NSA) Kalman Filter}\\
+NSA Kalman Filter akan digunakan untuk memprediksi posisi berikutnya berdasarkan dari posisi dan kecepatan benda. Pada NSA Kalman Filter \emph{noise covariance} dihitung dengan persamaan berikut:
+\begin{equation}
+\tilde{R}_k=\left(1-c_k\right) R_k
+\end{equation}
+Dimana:\\
+\hspace*{3em}
+\begin{tabular}{rl}
+    ${R}_k$:& \emph{constant measurement noise covariance}. \\
+    $ c_k$:& \emph{confidence score} pada keadaan $k$. \\
+\end{tabular}
+\\
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{./gambar/kalmanposition.png}
+  \caption{NSA Kalman Filter memprediksi pergerakan benda}
+  \label{fig:IoUequation}
+\end{figure}
+
+\end{enumerate}
+\item Penghitungan Kendaraan
+
+Pemberian id oleh StrongSORT pada objek kendaraan yang melintas akan dimanfaatkan untuk menghitung jumlah kendaraan. Jika id dari objek adalah id yang baru maka akan dihitung sebagai kendaraan baru dan ditambahkan pada penghitung kendaraan sesuai dengan kategorinya berdasarkan klasifikasi dari pendeteksi objek YOLOv7.
+
+\end{enumerate}
+\section{Simulasi Sistem}
+Pada tahap ini dilakukan implementasi dari tugas akhir berupa simulasi sistem sesuai dengan perancangan sistem yang dapat menghitung jumlah kendaraan yang melintasi jalan tertentu yang nantinya akan dijalankan dengan data uji berupa video CCTV lalu lintas yang jumlah kendaraannya sudah dihitung secara manual.
+\newpage
+\section{Desain Uji Coba Sistem}
+\begin{figure}[H]
+	\centering
+	\includegraphics[scale=0.85]{./gambar/diagramujicobasistem.pdf}
+	\caption{Blok Diagram Uji Coba Sistem}
+	\label{fig:diagramujicobasistem}
+\end{figure}
+
+Setelah melakukan simulasi sistem, pada tahap ini akan membandingkan hasil akurasi dari model penghitungan menggunakan YOLOv7 dan StrongSORT yang diusulkan pada penelitian ini dengan model penghitungan yang hanya menggunakan YOLOv7. Untuk melakukan hal tersebut, maka pada penelitian ini juga dikembangkan model penghitungan kendaraan hanya dengan menggunakan YOLOv7. Kedua model menjalankan uji coba dengan menggunakan \emph{dataset} yang sama. Gambar \ref{fig:diagramujicobasistem} menunjukkan skema desain uji coba sistem.
+
+\section{Analisis dan Evaluasi Hasil}
+Tahap selanjutnya dari penelitian Tugas Akhir ini adalah 
+menganalisis hasil simulasi program yang telah dibuat untuk 
+menguji apakah program yang dibuat dapat menghitung jumlah kendaraan yang melintas dengan baik. Pengujian dilakukan dengan melihat perhitungan kendaraan menggunakan StrongSORT dan YOLOv7. Selain itu akan dicari seberapa akurat metode tersebut dapat menghitung kendaraan yang melintas dan juga dilakukan uji empiris yaitu dengan cara membandingkan perhitungan antara sistem dan hitung manual. Apabila terdapat beberapa fungsi dan hasil yang belum sebagaimana mestinya maka dari tahap analisis ini diharapkan dapat diketahui kekurangannya sehingga dapat diperbaiki.
+
+
+\section{Penarikan Kesimpulan dan Saran}
+
+Pada tahap terakhir, akan dilakukan penarikan kesimpulan dan saran dari penelitian ini. Setelah itu akan dilakukan pembukuan tugas akhir sebagai hasil dari laporan penelitian yang telah dikerjakan.
+\newpage
